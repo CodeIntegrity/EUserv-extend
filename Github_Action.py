@@ -37,10 +37,10 @@ TG_API_HOST = "https://api.telegram.org"
 ## PROXIES = {"http": "http://127.0.0.1:10808", "https": "http://127.0.0.1:10808"}
 
 # 最大登录重试次数
-LOGIN_MAX_RETRY_COUNT = 5
+LOGIN_MAX_RETRY_COUNT = 1
 
 # 接收 PIN 的等待时间，单位为秒
-WAITING_TIME_OF_PIN = 15
+WAITING_TIME_OF_PIN = 60
 
 # 是否检查验证码解决器的使用情况
 CHECK_CAPTCHA_SOLVER_USAGE = True
