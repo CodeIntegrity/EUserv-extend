@@ -23,7 +23,7 @@ PASSWORD = os.getenv('EUSERV_PASSWORD')  # 填写密码
 
 # 验证码识别方式配置
 # 支持: 'truecaptcha' 或 'llm'
-CAPTCHA_SOLVER_TYPE = os.getenv('CAPTCHA_SOLVER_TYPE', 'llm').lower()
+CAPTCHA_SOLVER_TYPE = (os.getenv('CAPTCHA_SOLVER_TYPE', '').strip() or 'llm').lower()
 
 # TrueCaptcha API 配置
 TRUECAPTCHA_USERID = os.getenv('TRUECAPTCHA_USERID')
@@ -32,7 +32,7 @@ TRUECAPTCHA_APIKEY = os.getenv('TRUECAPTCHA_APIKEY')
 # OpenAI API 配置（用于 LLM OCR）
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL')  # 可选，支持自定义 base_url
-OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')  # 默认使用 gpt-4o-mini
+OPENAI_MODEL = os.getenv('OPENAI_MODEL') or 'gpt-4o-mini'  # 默认使用 gpt-4o-mini
 
 # Mailparser 配置
 MAILPARSER_DOWNLOAD_URL_ID = os.getenv('MAILPARSER_DOWNLOAD_URL_ID')
