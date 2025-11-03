@@ -3,7 +3,7 @@
 """
 euserv 自动续期脚本
 功能:
-* 使用 LLM OCR 自动识别验证码
+* 支持 TrueCaptcha API 和 LLM OCR 两种验证码识别方式
 * 发送通知到 Telegram
 * 增加登录失败重试机制
 * 日志信息格式化
@@ -16,15 +16,22 @@ import base64
 import io
 import requests
 from bs4 import BeautifulSoup
-from openai import OpenAI
-from PIL import Image
 
 # 账户信息：用户名和密码
 USERNAME = os.getenv('EUSERV_USERNAME')  # 填写用户名或邮箱
 PASSWORD = os.getenv('EUSERV_PASSWORD')  # 填写密码
 
-# OpenAI API 配置
+# 验证码识别方式配置
+# 支持: 'truecaptcha' 或 'llm'
+CAPTCHA_SOLVER_TYPE = os.getenv('CAPTCHA_SOLVER_TYPE', 'llm').lower()
+
+# TrueCaptcha API 配置
+TRUECAPTCHA_USERID = os.getenv('TRUECAPTCHA_USERID')
+TRUECAPTCHA_APIKEY = os.getenv('TRUECAPTCHA_APIKEY')
+
+# OpenAI API 配置（用于 LLM OCR）
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL')  # 可选，支持自定义 base_url
 OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')  # 默认使用 gpt-4o-mini
 
 # Mailparser 配置
@@ -45,10 +52,13 @@ LOGIN_MAX_RETRY_COUNT = 1
 # 接收 PIN 的等待时间，单位为秒
 WAITING_TIME_OF_PIN = 60
 
-# OCR 配置
+# LLM OCR 配置
 OCR_MAX_RETRIES = 3  # OCR API 调用最大重试次数
 OCR_RETRY_DELAY = 2  # OCR 重试延迟（秒）
 OCR_IMAGE_MAX_SIZE = (300, 100)  # OCR 图片缩放最大尺寸
+
+# 是否检查 TrueCaptcha 使用情况
+CHECK_CAPTCHA_SOLVER_USAGE = True
 
 user_agent = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -72,7 +82,9 @@ def log(info: str):
         "验证码是": "🔢",
         "登录尝试": "🔑",
         "[MailParser]": "📧",
+        "[TrueCaptcha]": "🧩",
         "[LLM OCR]": "🧩",
+        "[Captcha Solver]": "🧩",
         "[AutoEUServerless]": "🌐",
     }
     # 对每个关键字进行检查，并在找到时添加 emoji
@@ -112,8 +124,64 @@ def login_retry(*args, **kwargs):
         return inner
     return wrapper
 
-# LLM OCR 验证码解决器
+# ========== TrueCaptcha 验证码解决器 ==========
+def truecaptcha_solver(captcha_image_url: str, session: requests.session) -> dict:
+    response = session.get(captcha_image_url)
+    encoded_string = base64.b64encode(response.content)
+    url = "https://api.apitruecaptcha.org/one/gettext"
+
+    data = {
+        "userid": TRUECAPTCHA_USERID,
+        "apikey": TRUECAPTCHA_APIKEY,
+        "case": "mixed",
+        "mode": "human",
+        "data": str(encoded_string)[2:-1],
+    }
+    r = requests.post(url=url, json=data)
+    j = json.loads(r.text)
+    return j
+
+def get_captcha_solver_usage() -> dict:
+    url = "https://api.apitruecaptcha.org/one/getusage"
+    params = {
+        "username": TRUECAPTCHA_USERID,
+        "apikey": TRUECAPTCHA_APIKEY,
+    }
+    r = requests.get(url=url, params=params)
+    j = json.loads(r.text)
+    return j
+
+def handle_truecaptcha_result(solved: dict) -> str:
+    if "result" in solved:
+        solved_text = solved["result"]
+        if "RESULT  IS" in solved_text:
+            log("[TrueCaptcha] 使用的是演示 apikey。")
+            text = re.findall(r"RESULT  IS . (.*) .", solved_text)[0]
+        else:
+            log("[TrueCaptcha] 使用的是您自己的 apikey。")
+            text = solved_text
+        operators = ["X", "x", "+", "-"]
+        if any(x in text for x in operators):
+            for operator in operators:
+                operator_pos = text.find(operator)
+                if operator == "x" or operator == "X":
+                    operator = "*"
+                if operator_pos != -1:
+                    left_part = text[:operator_pos]
+                    right_part = text[operator_pos + 1:]
+                    if left_part.isdigit() and right_part.isdigit():
+                        return str(eval(f"{left_part} {operator} {right_part}"))
+                    else:
+                        return text
+        else:
+            return text
+    else:
+        print(solved)
+        raise KeyError("未找到解析结果。")
+
+# ========== LLM OCR 验证码解决器 ==========
 def resize_image(image_data: bytes, max_size=OCR_IMAGE_MAX_SIZE) -> bytes:
+    from PIL import Image
     with Image.open(io.BytesIO(image_data)) as img:
         img.thumbnail(max_size)
         buffered = io.BytesIO()
@@ -127,7 +195,14 @@ def invoke_llm_ocr(encoded_image: str) -> str:
     if not OPENAI_API_KEY:
         raise ValueError("未设置 OPENAI_API_KEY 环境变量")
     
-    client = OpenAI(api_key=OPENAI_API_KEY)
+    from openai import OpenAI
+    
+    client_kwargs = {"api_key": OPENAI_API_KEY}
+    if OPENAI_BASE_URL:
+        client_kwargs["base_url"] = OPENAI_BASE_URL
+        log(f"[LLM OCR] 使用自定义 base_url: {OPENAI_BASE_URL}")
+    
+    client = OpenAI(**client_kwargs)
     
     for attempt in range(OCR_MAX_RETRIES):
         try:
@@ -160,14 +235,14 @@ def invoke_llm_ocr(encoded_image: str) -> str:
                 log("[LLM OCR] 达到最大重试次数，OCR 识别失败")
                 raise
 
-def captcha_solver(captcha_image_url: str, session: requests.session) -> str:
+def llm_ocr_solver(captcha_image_url: str, session: requests.session) -> str:
     response = session.get(captcha_image_url)
     resized_image_data = resize_image(response.content)
     encoded_image = encode_image_to_base64(resized_image_data)
     result = invoke_llm_ocr(encoded_image)
     return result
 
-def handle_captcha_solved_result(solved_text: str) -> str:
+def handle_llm_ocr_result(solved_text: str) -> str:
     cleaned_text = solved_text.replace("-", "").replace(" ", "").strip()
     
     operators = ["X", "x", "*", "+", "-"]
@@ -189,6 +264,35 @@ def handle_captcha_solved_result(solved_text: str) -> str:
         return cleaned_text
     
     return solved_text
+
+# ========== 验证码解决器统一入口 ==========
+def captcha_solver(captcha_image_url: str, session: requests.session):
+    if CAPTCHA_SOLVER_TYPE == 'truecaptcha':
+        log("[Captcha Solver] 使用 TrueCaptcha 进行验证码识别...")
+        if not TRUECAPTCHA_USERID or not TRUECAPTCHA_APIKEY:
+            raise ValueError("使用 TrueCaptcha 需要设置 TRUECAPTCHA_USERID 和 TRUECAPTCHA_APIKEY")
+        solved_result = truecaptcha_solver(captcha_image_url, session)
+        captcha_code = handle_truecaptcha_result(solved_result)
+        log(f"[TrueCaptcha] 识别的验证码是: {captcha_code}")
+        
+        if CHECK_CAPTCHA_SOLVER_USAGE:
+            try:
+                usage = get_captcha_solver_usage()
+                log(f"[TrueCaptcha] 当前日期 {usage[0]['date']} API 使用次数: {usage[0]['count']}")
+            except:
+                pass
+        
+        return captcha_code
+    elif CAPTCHA_SOLVER_TYPE == 'llm':
+        log("[Captcha Solver] 使用 LLM OCR 进行验证码识别...")
+        if not OPENAI_API_KEY:
+            raise ValueError("使用 LLM OCR 需要设置 OPENAI_API_KEY")
+        solved_result = llm_ocr_solver(captcha_image_url, session)
+        captcha_code = handle_llm_ocr_result(solved_result)
+        log(f"[LLM OCR] 识别的验证码是: {captcha_code}")
+        return captcha_code
+    else:
+        raise ValueError(f"不支持的验证码识别方式: {CAPTCHA_SOLVER_TYPE}，请设置为 'truecaptcha' 或 'llm'")
 
 # 从 Mailparser 获取 PIN
 def get_pin_from_mailparser(url_id: str) -> str:
@@ -227,10 +331,7 @@ def login(username: str, password: str) -> (str, requests.session):
         if "To finish the login process please solve the following captcha." not in f.text:
             return "-1", session
         else:
-            log("[LLM OCR] 正在进行验证码识别...")
-            solved_result = captcha_solver(captcha_image_url, session)
-            captcha_code = handle_captcha_solved_result(solved_result)
-            log("[LLM OCR] 识别的验证码是: {}".format(captcha_code))
+            captcha_code = captcha_solver(captcha_image_url, session)
 
             f2 = session.post(
                 url,
@@ -242,10 +343,10 @@ def login(username: str, password: str) -> (str, requests.session):
                 },
             )
             if "To finish the login process please solve the following captcha." not in f2.text:
-                log("[LLM OCR] 验证通过")
+                log("[Captcha Solver] 验证通过")
                 return sess_id, session
             else:
-                log("[LLM OCR] 验证失败")
+                log("[Captcha Solver] 验证失败")
                 return "-1", session
     else:
         return sess_id, session

@@ -26,7 +26,11 @@ jobs:
       env:
         EUSERV_USERNAME: ${{ secrets.EUSERV_USERNAME }}
         EUSERV_PASSWORD: ${{ secrets.EUSERV_PASSWORD }}
+        CAPTCHA_SOLVER_TYPE: ${{ secrets.CAPTCHA_SOLVER_TYPE }}
+        TRUECAPTCHA_USERID: ${{ secrets.TRUECAPTCHA_USERID }}
+        TRUECAPTCHA_APIKEY: ${{ secrets.TRUECAPTCHA_APIKEY }}
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
         OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_USER_ID: ${{ secrets.TG_USER_ID }}
