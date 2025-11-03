@@ -199,8 +199,12 @@ def invoke_llm_ocr(encoded_image: str) -> str:
     
     client_kwargs = {"api_key": OPENAI_API_KEY}
     if OPENAI_BASE_URL:
-        client_kwargs["base_url"] = OPENAI_BASE_URL
-        log(f"[LLM OCR] 使用自定义 base_url: {OPENAI_BASE_URL}")
+        base_url = OPENAI_BASE_URL.strip()
+        if base_url and not base_url.startswith(('http://', 'https://')):
+            base_url = 'https://' + base_url
+            log(f"[LLM OCR] 自动为 base_url 添加 https:// 协议前缀")
+        client_kwargs["base_url"] = base_url
+        log(f"[LLM OCR] 使用自定义 base_url: {base_url}")
     
     client = OpenAI(**client_kwargs)
     
