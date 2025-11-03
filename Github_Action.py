@@ -31,7 +31,13 @@ TRUECAPTCHA_APIKEY = os.getenv('TRUECAPTCHA_APIKEY')
 
 # OpenAI API 配置（用于 LLM OCR）
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL')  # 可选，支持自定义 base_url
+_raw_openai_base_url = os.getenv('OPENAI_BASE_URL')
+if _raw_openai_base_url is not None:
+    OPENAI_BASE_URL = _raw_openai_base_url.strip() or None
+    if OPENAI_BASE_URL is None:
+        os.environ.pop('OPENAI_BASE_URL', None)
+else:
+    OPENAI_BASE_URL = None
 OPENAI_MODEL = os.getenv('OPENAI_MODEL') or 'gpt-4o-mini'  # 默认使用 gpt-4o-mini
 
 # Mailparser 配置
@@ -199,9 +205,9 @@ def invoke_llm_ocr(encoded_image: str) -> str:
     
     client_kwargs = {"api_key": OPENAI_API_KEY}
     if OPENAI_BASE_URL:
-        base_url = OPENAI_BASE_URL.strip()
-        if base_url and not base_url.startswith(('http://', 'https://')):
-            base_url = 'https://' + base_url
+        base_url = OPENAI_BASE_URL
+        if not base_url.lower().startswith(('http://', 'https://')):
+            base_url = f"https://{base_url}"
             log(f"[LLM OCR] 自动为 base_url 添加 https:// 协议前缀")
         client_kwargs["base_url"] = base_url
         log(f"[LLM OCR] 使用自定义 base_url: {base_url}")
