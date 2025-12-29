@@ -53,14 +53,14 @@ TG_API_HOST = "https://api.telegram.org"
 ## PROXIES = {"http": "http://127.0.0.1:10808", "https": "http://127.0.0.1:10808"}
 
 # 最大登录重试次数
-LOGIN_MAX_RETRY_COUNT = 1
+LOGIN_MAX_RETRY_COUNT = 10
 
 # 接收 PIN 的等待时间，单位为秒
 WAITING_TIME_OF_PIN = 60
 
 # LLM OCR 配置
-OCR_MAX_RETRIES = 3  # OCR API 调用最大重试次数
-OCR_RETRY_DELAY = 2  # OCR 重试延迟（秒）
+OCR_MAX_RETRIES = 10  # OCR API 调用最大重试次数
+OCR_RETRY_DELAY = 5  # OCR 重试延迟（秒）
 OCR_IMAGE_MAX_SIZE = (300, 100)  # OCR 图片缩放最大尺寸
 
 # 是否检查 TrueCaptcha 使用情况
