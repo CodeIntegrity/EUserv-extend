@@ -30,9 +30,12 @@ jobs:
         TRUECAPTCHA_USERID: ${{ secrets.TRUECAPTCHA_USERID }}
         TRUECAPTCHA_APIKEY: ${{ secrets.TRUECAPTCHA_APIKEY }}
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
-        OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+        OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+        OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_USER_ID: ${{ secrets.TG_USER_ID }}
         MAILPARSER_DOWNLOAD_URL_ID: ${{ secrets.MAILPARSER_DOWNLOAD_URL_ID }}
+        PUSH_TYPE: ${{ vars.PUSH_TYPE }}
+        GOTIFY_URL: ${{ vars.GOTIFY_URL }}
+        GOTIFY_TOKEN: ${{ secrets.GOTIFY_TOKEN }}
       run: python Github_Action.py

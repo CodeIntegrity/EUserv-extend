@@ -44,10 +44,18 @@ OPENAI_MODEL = os.getenv('OPENAI_MODEL') or 'gpt-4o-mini'  # 默认使用 gpt-4o
 MAILPARSER_DOWNLOAD_URL_ID = os.getenv('MAILPARSER_DOWNLOAD_URL_ID')
 MAILPARSER_DOWNLOAD_BASE_URL = "https://files.mailparser.io/d/"
 
+# 推送方式配置
+# 支持: 'telegram' 或 'gotify'
+PUSH_TYPE = (os.getenv('PUSH_TYPE', '').strip() or 'telegram').lower()
+
 # Telegram Bot 推送配置
 TG_BOT_TOKEN = os.getenv('TG_BOT_TOKEN')
 TG_USER_ID = os.getenv('TG_USER_ID')
 TG_API_HOST = "https://api.telegram.org"
+
+# Gotify 推送配置
+GOTIFY_URL = os.getenv('GOTIFY_URL')  # 例如: https://push.example.com
+GOTIFY_TOKEN = os.getenv('GOTIFY_TOKEN')
 
 # 代理设置（如果需要）
 ## PROXIES = {"http": "http://127.0.0.1:10808", "https": "http://127.0.0.1:10808"}
@@ -485,6 +493,28 @@ def telegram():
     else:
         print("Telegram Bot 推送成功")
 
+# 发送 Gotify 通知
+def gotify():
+    message = (
+        "**AutoEUServerless 日志**\n\n" + desp
+    )
+
+    url = f"{GOTIFY_URL}/message?token={GOTIFY_TOKEN}"
+    payload = {
+        "message": message,
+        "priority": 5,
+        "extras": {
+            "client::display": {
+                "contentType": "text/markdown"
+            }
+        }
+    }
+    response = requests.post(url, json=payload)
+    if response.status_code != 200:
+        print("Gotify 推送失败")
+    else:
+        print("Gotify 推送成功")
+
 
 
 def main_handler(event, context):
@@ -522,9 +552,17 @@ def main_handler(event, context):
         check(sessid, s)
         time.sleep(5)
 
-    # 发送 Telegram 通知
-    if TG_BOT_TOKEN and TG_USER_ID and TG_API_HOST:
-        telegram()
+    # 发送推送通知
+    if PUSH_TYPE == 'gotify':
+        if GOTIFY_URL and GOTIFY_TOKEN:
+            gotify()
+        else:
+            print("Gotify 推送配置不完整，跳过推送")
+    else:  # 默认使用 telegram
+        if TG_BOT_TOKEN and TG_USER_ID and TG_API_HOST:
+            telegram()
+        else:
+            print("Telegram 推送配置不完整，跳过推送")
 
     print("*" * 30)
 
