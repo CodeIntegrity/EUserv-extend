@@ -3,7 +3,8 @@ name: Keep Alive
 on:
   schedule:
     - cron: '0 0 1 * *'  # 每月1日执行
-
+  workflow_dispatch:
+  
 jobs:
   keep-alive:
     runs-on: ubuntu-latest
