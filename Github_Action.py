@@ -64,11 +64,21 @@ GOTIFY_TOKEN = os.getenv('GOTIFY_TOKEN')
 LOGIN_MAX_RETRY_COUNT = 10
 
 # 接收 PIN 的等待时间，单位为秒
-WAITING_TIME_OF_PIN = int(os.getenv('WAITING_TIME_OF_PIN', '60'))
+def get_int_env(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    try:
+        return int(value.strip())
+    except ValueError:
+        print(f"[AutoEUServerless] 环境变量 {name}={value!r} 不是有效整数，使用默认值 {default}")
+        return default
+
+WAITING_TIME_OF_PIN = get_int_env('WAITING_TIME_OF_PIN', 60)
 
 # 从 Mailparser 获取 PIN 的重试配置，避免邮件尚未解析完成时因空列表直接崩溃
-MAILPARSER_PIN_MAX_RETRIES = int(os.getenv('MAILPARSER_PIN_MAX_RETRIES', '6'))
-MAILPARSER_PIN_RETRY_DELAY = int(os.getenv('MAILPARSER_PIN_RETRY_DELAY', '30'))
+MAILPARSER_PIN_MAX_RETRIES = get_int_env('MAILPARSER_PIN_MAX_RETRIES', 6)
+MAILPARSER_PIN_RETRY_DELAY = get_int_env('MAILPARSER_PIN_RETRY_DELAY', 30)
 
 # LLM OCR 配置
 OCR_MAX_RETRIES = 10  # OCR API 调用最大重试次数
