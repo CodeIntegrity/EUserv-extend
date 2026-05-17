@@ -64,7 +64,11 @@ GOTIFY_TOKEN = os.getenv('GOTIFY_TOKEN')
 LOGIN_MAX_RETRY_COUNT = 10
 
 # 接收 PIN 的等待时间，单位为秒
-WAITING_TIME_OF_PIN = 60
+WAITING_TIME_OF_PIN = int(os.getenv('WAITING_TIME_OF_PIN', '60'))
+
+# 从 Mailparser 获取 PIN 的重试配置，避免邮件尚未解析完成时因空列表直接崩溃
+MAILPARSER_PIN_MAX_RETRIES = int(os.getenv('MAILPARSER_PIN_MAX_RETRIES', '6'))
+MAILPARSER_PIN_RETRY_DELAY = int(os.getenv('MAILPARSER_PIN_RETRY_DELAY', '30'))
 
 # LLM OCR 配置
 OCR_MAX_RETRIES = 10  # OCR API 调用最大重试次数
@@ -315,11 +319,37 @@ def captcha_solver(captcha_image_url: str, session: requests.session):
 # 从 Mailparser 获取 PIN
 def get_pin_from_mailparser(url_id: str) -> str:
     # 从 Mailparser 获取 PIN# 
-    response = requests.get(
-        f"{MAILPARSER_DOWNLOAD_BASE_URL}{url_id}",
+    last_error = None
+    download_url = f"{MAILPARSER_DOWNLOAD_BASE_URL}{url_id}"
+
+    for attempt in range(1, MAILPARSER_PIN_MAX_RETRIES + 1):
+        try:
+            response = requests.get(download_url, timeout=30)
+            response.raise_for_status()
+            payload = response.json()
+
+            if isinstance(payload, list) and payload:
+                pin = payload[0].get("pin")
+                if pin:
+                    return str(pin).strip()
+                last_error = "Mailparser 返回了数据，但第一条记录缺少 pin 字段"
+            else:
+                last_error = f"Mailparser 暂无 PIN 数据，返回记录数: {len(payload) if isinstance(payload, list) else '非列表响应'}"
+        except Exception as exc:
+            last_error = str(exc)
+
+        if attempt < MAILPARSER_PIN_MAX_RETRIES:
+            log(
+                f"[MailParser] 第 {attempt}/{MAILPARSER_PIN_MAX_RETRIES} 次获取 PIN 失败: "
+                f"{last_error}，{MAILPARSER_PIN_RETRY_DELAY} 秒后重试"
+            )
+            time.sleep(MAILPARSER_PIN_RETRY_DELAY)
+
+    raise RuntimeError(
+        "Mailparser 未返回可用 PIN。请检查 MAILPARSER_DOWNLOAD_URL_ID 是否正确、"
+        "EUserv PIN 邮件是否已送达并被 Mailparser 规则解析，以及 Mailparser 输出字段是否命名为 pin。"
+        f"最后一次错误: {last_error}"
     )
-    pin = response.json()[0]["pin"]
-    return pin
 
 # 登录函数
 @login_retry(max_retry=LOGIN_MAX_RETRY_COUNT)
@@ -430,7 +460,11 @@ def renew(
 
     # 等待邮件解析器解析出 PIN
     time.sleep(WAITING_TIME_OF_PIN)
-    pin = get_pin_from_mailparser(mailparser_dl_url_id)
+    try:
+        pin = get_pin_from_mailparser(mailparser_dl_url_id)
+    except RuntimeError as exc:
+        log(f"[MailParser] 获取 PIN 失败: {exc}")
+        return False
     log(f"[MailParser] PIN: {pin}")
 
     # 使用 PIN 获取 token

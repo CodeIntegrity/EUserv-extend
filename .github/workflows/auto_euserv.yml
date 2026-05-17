@@ -35,6 +35,9 @@ jobs:
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_USER_ID: ${{ secrets.TG_USER_ID }}
         MAILPARSER_DOWNLOAD_URL_ID: ${{ secrets.MAILPARSER_DOWNLOAD_URL_ID }}
+        WAITING_TIME_OF_PIN: ${{ vars.WAITING_TIME_OF_PIN }}
+        MAILPARSER_PIN_MAX_RETRIES: ${{ vars.MAILPARSER_PIN_MAX_RETRIES }}
+        MAILPARSER_PIN_RETRY_DELAY: ${{ vars.MAILPARSER_PIN_RETRY_DELAY }}
         PUSH_TYPE: ${{ vars.PUSH_TYPE }}
         GOTIFY_URL: ${{ vars.GOTIFY_URL }}
         GOTIFY_TOKEN: ${{ secrets.GOTIFY_TOKEN }}
