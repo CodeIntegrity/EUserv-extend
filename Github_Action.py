@@ -14,6 +14,11 @@ import json
 import time
 import base64
 import io
+import imaplib
+import email
+from datetime import datetime, timezone
+from email.header import decode_header
+from email.utils import parsedate_to_datetime
 import requests
 from bs4 import BeautifulSoup
 
@@ -40,9 +45,35 @@ else:
     OPENAI_BASE_URL = None
 OPENAI_MODEL = os.getenv('OPENAI_MODEL') or 'gpt-4o-mini'  # 默认使用 gpt-4o-mini
 
-# Mailparser 配置
+# PIN 获取方式配置
+# 支持: 'imap' 或 'mailparser'，默认使用 IMAP 直连邮箱
+PIN_FETCHER_TYPE = (os.getenv('PIN_FETCHER_TYPE', '').strip() or 'imap').lower()
+
+# Mailparser 配置（兼容模式）
 MAILPARSER_DOWNLOAD_URL_ID = os.getenv('MAILPARSER_DOWNLOAD_URL_ID')
 MAILPARSER_DOWNLOAD_BASE_URL = "https://files.mailparser.io/d/"
+
+def get_int_env(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    try:
+        return int(value.strip())
+    except ValueError:
+        print(f"[AutoEUServerless] 环境变量 {name}={value!r} 不是有效整数，使用默认值 {default}")
+        return default
+
+# IMAP 配置
+IMAP_HOST = os.getenv('IMAP_HOST')
+IMAP_PORT = get_int_env('IMAP_PORT', 993)
+IMAP_USERNAME = os.getenv('IMAP_USERNAME')
+IMAP_PASSWORD = os.getenv('IMAP_PASSWORD')
+IMAP_MAILBOX = (os.getenv('IMAP_MAILBOX', '').strip() or 'INBOX')
+IMAP_USE_SSL = (os.getenv('IMAP_USE_SSL', '').strip().lower() or 'true') not in ('false', '0', 'no')
+IMAP_SEARCH_CRITERIA = (os.getenv('IMAP_SEARCH_CRITERIA', '').strip() or '(FROM "euserv")')
+IMAP_PIN_MAX_RETRIES = get_int_env('IMAP_PIN_MAX_RETRIES', 6)
+IMAP_PIN_RETRY_DELAY = get_int_env('IMAP_PIN_RETRY_DELAY', 30)
+IMAP_LOOKBACK_LIMIT = get_int_env('IMAP_LOOKBACK_LIMIT', 20)
 
 # 推送方式配置
 # 支持: 'telegram' 或 'gotify'
@@ -64,21 +95,11 @@ GOTIFY_TOKEN = os.getenv('GOTIFY_TOKEN')
 LOGIN_MAX_RETRY_COUNT = 10
 
 # 接收 PIN 的等待时间，单位为秒
-def get_int_env(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if value is None or value.strip() == "":
-        return default
-    try:
-        return int(value.strip())
-    except ValueError:
-        print(f"[AutoEUServerless] 环境变量 {name}={value!r} 不是有效整数，使用默认值 {default}")
-        return default
-
-WAITING_TIME_OF_PIN = get_int_env('WAITING_TIME_OF_PIN', 60)
+WAITING_TIME_OF_PIN = 60
 
 # 从 Mailparser 获取 PIN 的重试配置，避免邮件尚未解析完成时因空列表直接崩溃
-MAILPARSER_PIN_MAX_RETRIES = get_int_env('MAILPARSER_PIN_MAX_RETRIES', 6)
-MAILPARSER_PIN_RETRY_DELAY = get_int_env('MAILPARSER_PIN_RETRY_DELAY', 30)
+MAILPARSER_PIN_MAX_RETRIES = 6
+MAILPARSER_PIN_RETRY_DELAY = 30
 
 # LLM OCR 配置
 OCR_MAX_RETRIES = 10  # OCR API 调用最大重试次数
@@ -110,6 +131,8 @@ def log(info: str):
         "验证码是": "🔢",
         "登录尝试": "🔑",
         "[MailParser]": "📧",
+        "[IMAP]": "📧",
+        "[PIN Fetcher]": "📧",
         "[TrueCaptcha]": "🧩",
         "[LLM OCR]": "🧩",
         "[Captcha Solver]": "🧩",
@@ -326,9 +349,26 @@ def captcha_solver(captcha_image_url: str, session: requests.session):
     else:
         raise ValueError(f"不支持的验证码识别方式: {CAPTCHA_SOLVER_TYPE}，请设置为 'truecaptcha' 或 'llm'")
 
+# ========== PIN 获取器 ==========
+def extract_pin_from_text(text: str) -> str:
+    """从 EUserv PIN 邮件正文中提取 6 位 PIN。"""
+    if not text:
+        return ""
+
+    patterns = [
+        r"(?is)\bPIN\s*:\s*\D*(\d{6})\b",
+        r"(?is)requested\s+a\s+PIN.*?\b(\d{6})\b",
+        r"(?is)security\s+check.*?\b(\d{6})\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1)
+    return ""
+
 # 从 Mailparser 获取 PIN
 def get_pin_from_mailparser(url_id: str) -> str:
-    # 从 Mailparser 获取 PIN# 
+    # 从 Mailparser 获取 PIN#
     last_error = None
     download_url = f"{MAILPARSER_DOWNLOAD_BASE_URL}{url_id}"
 
@@ -360,6 +400,137 @@ def get_pin_from_mailparser(url_id: str) -> str:
         "EUserv PIN 邮件是否已送达并被 Mailparser 规则解析，以及 Mailparser 输出字段是否命名为 pin。"
         f"最后一次错误: {last_error}"
     )
+
+def decode_mime_header(value: str) -> str:
+    if not value:
+        return ""
+    decoded_parts = []
+    for part, charset in decode_header(value):
+        if isinstance(part, bytes):
+            decoded_parts.append(part.decode(charset or 'utf-8', errors='replace'))
+        else:
+            decoded_parts.append(part)
+    return "".join(decoded_parts)
+
+def get_email_text(message: email.message.Message) -> str:
+    parts = []
+    if message.is_multipart():
+        for part in message.walk():
+            content_type = part.get_content_type()
+            disposition = str(part.get('Content-Disposition', '')).lower()
+            if content_type in ('text/plain', 'text/html') and 'attachment' not in disposition:
+                payload = part.get_payload(decode=True)
+                if payload:
+                    charset = part.get_content_charset() or 'utf-8'
+                    parts.append(payload.decode(charset, errors='replace'))
+    else:
+        payload = message.get_payload(decode=True)
+        if payload:
+            charset = message.get_content_charset() or 'utf-8'
+            parts.append(payload.decode(charset, errors='replace'))
+    return "\n".join(parts)
+
+def get_pin_from_imap(
+    imap_host: str = None,
+    imap_port: int = None,
+    imap_username: str = None,
+    imap_password: str = None,
+    imap_mailbox: str = None,
+    requested_after: datetime = None,
+) -> str:
+    """通过 IMAP 直连邮箱获取最新 EUserv PIN。"""
+    last_error = None
+    host = imap_host or IMAP_HOST
+    port = imap_port or IMAP_PORT
+    username = imap_username or IMAP_USERNAME
+    password = imap_password or IMAP_PASSWORD
+    mailbox = imap_mailbox or IMAP_MAILBOX
+
+    for attempt in range(1, IMAP_PIN_MAX_RETRIES + 1):
+        mail = None
+        try:
+            mail = imaplib.IMAP4_SSL(host, port) if IMAP_USE_SSL else imaplib.IMAP4(host, port)
+            mail.login(username, password)
+            mail.select(mailbox)
+
+            status, data = mail.search(None, IMAP_SEARCH_CRITERIA)
+            if status != 'OK':
+                raise RuntimeError(f"IMAP 搜索失败: {status} {data}")
+
+            message_ids = data[0].split()[-IMAP_LOOKBACK_LIMIT:]
+            if not message_ids:
+                last_error = "未搜索到符合条件的邮件"
+            for message_id in reversed(message_ids):
+                status, msg_data = mail.fetch(message_id, '(RFC822)')
+                if status != 'OK' or not msg_data or not msg_data[0]:
+                    continue
+                raw_message = msg_data[0][1]
+                message = email.message_from_bytes(raw_message)
+                subject = decode_mime_header(message.get('Subject', ''))
+                sender = decode_mime_header(message.get('From', ''))
+                date_header = message.get('Date', '')
+                try:
+                    parsed_date = parsedate_to_datetime(date_header) if date_header else None
+                except Exception:
+                    parsed_date = None
+                if requested_after and parsed_date:
+                    if parsed_date.tzinfo is None:
+                        parsed_date = parsed_date.replace(tzinfo=timezone.utc)
+                    if parsed_date.astimezone(timezone.utc) < requested_after.astimezone(timezone.utc):
+                        last_error = "已找到历史 PIN 邮件，等待本次请求的新邮件"
+                        continue
+                text = get_email_text(message)
+                pin = extract_pin_from_text(text)
+                if pin:
+                    log(f"[IMAP] 已从邮件中提取 PIN，主题: {subject or '无主题'}，发件人: {sender or '未知'}，日期: {parsed_date or date_header or '未知'}")
+                    return pin
+                last_error = "已找到邮件但未匹配到 PIN"
+        except Exception as exc:
+            last_error = str(exc)
+        finally:
+            if mail:
+                try:
+                    mail.logout()
+                except Exception:
+                    pass
+
+        if attempt < IMAP_PIN_MAX_RETRIES:
+            log(
+                f"[IMAP] 第 {attempt}/{IMAP_PIN_MAX_RETRIES} 次获取 PIN 失败: "
+                f"{last_error}，{IMAP_PIN_RETRY_DELAY} 秒后重试"
+            )
+            time.sleep(IMAP_PIN_RETRY_DELAY)
+
+    raise RuntimeError(
+        "IMAP 未获取到可用 PIN。请检查 IMAP_HOST/IMAP_USERNAME/IMAP_PASSWORD、"
+        "邮箱是否允许 IMAP 登录、搜索条件是否能匹配 EUserv PIN 邮件。"
+        f"最后一次错误: {last_error}"
+    )
+
+def get_pin(
+    mailparser_dl_url_id: str = None,
+    imap_host: str = None,
+    imap_username: str = None,
+    imap_password: str = None,
+    imap_mailbox: str = None,
+    requested_after: datetime = None,
+) -> str:
+    """统一 PIN 获取入口。"""
+    if PIN_FETCHER_TYPE == 'mailparser':
+        log("[PIN Fetcher] 使用 Mailparser 兼容模式获取 PIN")
+        if not mailparser_dl_url_id:
+            raise ValueError("mailparser 模式缺少 MAILPARSER_DOWNLOAD_URL_ID")
+        return get_pin_from_mailparser(mailparser_dl_url_id)
+    if PIN_FETCHER_TYPE == 'imap':
+        log("[PIN Fetcher] 使用 IMAP 直连邮箱获取 PIN")
+        return get_pin_from_imap(
+            imap_host=imap_host,
+            imap_username=imap_username,
+            imap_password=imap_password,
+            imap_mailbox=imap_mailbox,
+            requested_after=requested_after,
+        )
+    raise ValueError(f"不支持的 PIN 获取方式: {PIN_FETCHER_TYPE}，请设置为 'imap' 或 'mailparser'")
 
 # 登录函数
 @login_retry(max_retry=LOGIN_MAX_RETRY_COUNT)
@@ -437,7 +608,15 @@ def get_servers(sess_id: str, session: requests.session) -> {}:
 
 # 续期操作
 def renew(
-    sess_id: str, session: requests.session, password: str, order_id: str, mailparser_dl_url_id: str
+    sess_id: str,
+    session: requests.session,
+    password: str,
+    order_id: str,
+    mailparser_dl_url_id: str = None,
+    imap_host: str = None,
+    imap_username: str = None,
+    imap_password: str = None,
+    imap_mailbox: str = None,
 ) -> bool:
     # 执行续期操作# 
     url = "https://support.euserv.com/index.iphp"
@@ -457,6 +636,7 @@ def renew(
     session.post(url, headers=headers, data=data)
 
     # 弹出 'Security Check' 窗口，将自动触发 '发送 PIN'。
+    pin_requested_at = datetime.now(timezone.utc)
     session.post(
         url,
         headers=headers,
@@ -468,14 +648,21 @@ def renew(
         },
     )
 
-    # 等待邮件解析器解析出 PIN
+    # 等待邮件送达或邮件解析器解析出 PIN
     time.sleep(WAITING_TIME_OF_PIN)
     try:
-        pin = get_pin_from_mailparser(mailparser_dl_url_id)
-    except RuntimeError as exc:
-        log(f"[MailParser] 获取 PIN 失败: {exc}")
+        pin = get_pin(
+            mailparser_dl_url_id,
+            imap_host=imap_host,
+            imap_username=imap_username,
+            imap_password=imap_password,
+            imap_mailbox=imap_mailbox,
+            requested_after=pin_requested_at,
+        )
+    except Exception as exc:
+        log(f"[PIN Fetcher] 获取 PIN 失败: {exc}")
         return False
-    log(f"[MailParser] PIN: {pin}")
+    log(f"[PIN Fetcher] PIN: {pin}")
 
     # 使用 PIN 获取 token
     data = {
@@ -561,19 +748,55 @@ def gotify():
 
 
 
+def expand_account_config(raw_value: str, account_count: int, name: str, required: bool = True) -> list:
+    """展开支持单值共享或按账户空格分隔的配置。"""
+    if not raw_value:
+        if required:
+            log(f"[AutoEUServerless] 缺少配置: {name}")
+            exit(1)
+        return [None] * account_count
+    values = raw_value.strip().split()
+    if len(values) == 1:
+        return values * account_count
+    if len(values) == account_count:
+        return values
+    log(f"[AutoEUServerless] {name} 的数量应为 1 或与账户数量一致，当前为 {len(values)}，账户数量为 {account_count}!")
+    exit(1)
+
+
 def main_handler(event, context):
-    # 主函数，处理每个账户的续期# 
+    # 主函数，处理每个账户的续期#
     if not USERNAME or not PASSWORD:
         log("[AutoEUServerless] 你没有添加任何账户")
         exit(1)
     user_list = USERNAME.strip().split()
     passwd_list = PASSWORD.strip().split()
-    mailparser_dl_url_id_list = MAILPARSER_DOWNLOAD_URL_ID.strip().split()
+    mailparser_dl_url_id_list = []
+    imap_host_list = []
+    imap_username_list = []
+    imap_password_list = []
+    imap_mailbox_list = []
     if len(user_list) != len(passwd_list):
         log("[AutoEUServerless] 用户名和密码数量不匹配!")
         exit(1)
-    if len(mailparser_dl_url_id_list) != len(user_list):
-        log("[AutoEUServerless] mailparser_dl_url_ids 和用户名的数量不匹配!")
+    if PIN_FETCHER_TYPE == 'mailparser':
+        if not MAILPARSER_DOWNLOAD_URL_ID:
+            log("[AutoEUServerless] mailparser 模式需要设置 MAILPARSER_DOWNLOAD_URL_ID!")
+            exit(1)
+        mailparser_dl_url_id_list = MAILPARSER_DOWNLOAD_URL_ID.strip().split()
+        if len(mailparser_dl_url_id_list) != len(user_list):
+            log("[AutoEUServerless] mailparser_dl_url_ids 和用户名的数量不匹配!")
+            exit(1)
+    elif PIN_FETCHER_TYPE == 'imap':
+        if not IMAP_HOST or not IMAP_USERNAME or not IMAP_PASSWORD:
+            log("[AutoEUServerless] imap 模式需要设置 IMAP_HOST、IMAP_USERNAME、IMAP_PASSWORD!")
+            exit(1)
+        imap_host_list = expand_account_config(IMAP_HOST, len(user_list), 'IMAP_HOST')
+        imap_username_list = expand_account_config(IMAP_USERNAME, len(user_list), 'IMAP_USERNAME')
+        imap_password_list = expand_account_config(IMAP_PASSWORD, len(user_list), 'IMAP_PASSWORD')
+        imap_mailbox_list = expand_account_config(IMAP_MAILBOX, len(user_list), 'IMAP_MAILBOX')
+    else:
+        log(f"[AutoEUServerless] 不支持的 PIN_FETCHER_TYPE: {PIN_FETCHER_TYPE}，请设置为 imap 或 mailparser!")
         exit(1)
     for i in range(len(user_list)):
         print("*" * 30)
@@ -586,7 +809,22 @@ def main_handler(event, context):
         log("[AutoEUServerless] 检测到第 {} 个账号有 {} 台 VPS，正在尝试续期".format(i + 1, len(SERVERS)))
         for k, v in SERVERS.items():
             if v:
-                if not renew(sessid, s, passwd_list[i], k, mailparser_dl_url_id_list[i]):
+                mailparser_dl_url_id = mailparser_dl_url_id_list[i] if PIN_FETCHER_TYPE == 'mailparser' else None
+                imap_host = imap_host_list[i] if PIN_FETCHER_TYPE == 'imap' else None
+                imap_username = imap_username_list[i] if PIN_FETCHER_TYPE == 'imap' else None
+                imap_password = imap_password_list[i] if PIN_FETCHER_TYPE == 'imap' else None
+                imap_mailbox = imap_mailbox_list[i] if PIN_FETCHER_TYPE == 'imap' else None
+                if not renew(
+                    sessid,
+                    s,
+                    passwd_list[i],
+                    k,
+                    mailparser_dl_url_id,
+                    imap_host=imap_host,
+                    imap_username=imap_username,
+                    imap_password=imap_password,
+                    imap_mailbox=imap_mailbox,
+                ):
                     log("[AutoEUServerless] ServerID: %s 续订错误!" % k)
                 else:
                     log("[AutoEUServerless] ServerID: %s 已成功续订!" % k)

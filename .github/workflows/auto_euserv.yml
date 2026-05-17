@@ -18,9 +18,8 @@ jobs:
       with:
         python-version: '3.x'  # 指定Python3.x
 
-    - name: Install dependencies
-      run: |
-        pip install -r requirements.txt
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
 
     - name: Run script
       env:
@@ -34,11 +33,19 @@ jobs:
         OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_USER_ID: ${{ secrets.TG_USER_ID }}
+        PIN_FETCHER_TYPE: ${{ vars.PIN_FETCHER_TYPE }}
+        IMAP_HOST: ${{ vars.IMAP_HOST }}
+        IMAP_PORT: ${{ vars.IMAP_PORT }}
+        IMAP_USERNAME: ${{ secrets.IMAP_USERNAME }}
+        IMAP_PASSWORD: ${{ secrets.IMAP_PASSWORD }}
+        IMAP_MAILBOX: ${{ vars.IMAP_MAILBOX }}
+        IMAP_USE_SSL: ${{ vars.IMAP_USE_SSL }}
+        IMAP_SEARCH_CRITERIA: ${{ vars.IMAP_SEARCH_CRITERIA }}
+        IMAP_PIN_MAX_RETRIES: ${{ vars.IMAP_PIN_MAX_RETRIES }}
+        IMAP_PIN_RETRY_DELAY: ${{ vars.IMAP_PIN_RETRY_DELAY }}
+        IMAP_LOOKBACK_LIMIT: ${{ vars.IMAP_LOOKBACK_LIMIT }}
         MAILPARSER_DOWNLOAD_URL_ID: ${{ secrets.MAILPARSER_DOWNLOAD_URL_ID }}
-        WAITING_TIME_OF_PIN: ${{ vars.WAITING_TIME_OF_PIN }}
-        MAILPARSER_PIN_MAX_RETRIES: ${{ vars.MAILPARSER_PIN_MAX_RETRIES }}
-        MAILPARSER_PIN_RETRY_DELAY: ${{ vars.MAILPARSER_PIN_RETRY_DELAY }}
         PUSH_TYPE: ${{ vars.PUSH_TYPE }}
         GOTIFY_URL: ${{ vars.GOTIFY_URL }}
         GOTIFY_TOKEN: ${{ secrets.GOTIFY_TOKEN }}
-      run: python Github_Action.py
+      run: uv run --with-requirements requirements.txt python Github_Action.py
