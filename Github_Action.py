@@ -430,13 +430,44 @@ def get_email_text(message: email.message.Message) -> str:
             parts.append(payload.decode(charset, errors='replace'))
     return "\n".join(parts)
 
+def get_latest_imap_uid(
+    imap_host: str = None,
+    imap_port: int = None,
+    imap_username: str = None,
+    imap_password: str = None,
+    imap_mailbox: str = None,
+) -> int:
+    """获取当前符合搜索条件的最新邮件 UID，作为后续判断新邮件的基线。"""
+    host = imap_host or IMAP_HOST
+    port = imap_port or IMAP_PORT
+    username = imap_username or IMAP_USERNAME
+    password = imap_password or IMAP_PASSWORD
+    mailbox = imap_mailbox or IMAP_MAILBOX
+    mail = None
+    try:
+        mail = imaplib.IMAP4_SSL(host, port) if IMAP_USE_SSL else imaplib.IMAP4(host, port)
+        mail.login(username, password)
+        mail.select(mailbox)
+        status, data = mail.uid('search', None, IMAP_SEARCH_CRITERIA)
+        if status != 'OK':
+            raise RuntimeError(f"IMAP UID 搜索失败: {status} {data}")
+        message_uids = data[0].split() if data and data[0] else []
+        return max((int(uid) for uid in message_uids), default=0)
+    finally:
+        if mail:
+            try:
+                mail.logout()
+            except Exception:
+                pass
+
+
 def get_pin_from_imap(
     imap_host: str = None,
     imap_port: int = None,
     imap_username: str = None,
     imap_password: str = None,
     imap_mailbox: str = None,
-    requested_after: datetime = None,
+    after_uid: int = None,
 ) -> str:
     """通过 IMAP 直连邮箱获取最新 EUserv PIN。"""
     last_error = None
@@ -453,15 +484,19 @@ def get_pin_from_imap(
             mail.login(username, password)
             mail.select(mailbox)
 
-            status, data = mail.search(None, IMAP_SEARCH_CRITERIA)
+            status, data = mail.uid('search', None, IMAP_SEARCH_CRITERIA)
             if status != 'OK':
-                raise RuntimeError(f"IMAP 搜索失败: {status} {data}")
+                raise RuntimeError(f"IMAP UID 搜索失败: {status} {data}")
 
-            message_ids = data[0].split()[-IMAP_LOOKBACK_LIMIT:]
-            if not message_ids:
-                last_error = "未搜索到符合条件的邮件"
-            for message_id in reversed(message_ids):
-                status, msg_data = mail.fetch(message_id, '(RFC822)')
+            message_uids = data[0].split() if data and data[0] else []
+            if after_uid is not None:
+                message_uids = [uid for uid in message_uids if int(uid) > after_uid]
+            else:
+                message_uids = message_uids[-IMAP_LOOKBACK_LIMIT:]
+            if not message_uids:
+                last_error = "未搜索到本次请求后的新 PIN 邮件" if after_uid is not None else "未搜索到符合条件的邮件"
+            for message_uid in reversed(message_uids[-IMAP_LOOKBACK_LIMIT:]):
+                status, msg_data = mail.uid('fetch', message_uid, '(RFC822)')
                 if status != 'OK' or not msg_data or not msg_data[0]:
                     continue
                 raw_message = msg_data[0][1]
@@ -473,18 +508,12 @@ def get_pin_from_imap(
                     parsed_date = parsedate_to_datetime(date_header) if date_header else None
                 except Exception:
                     parsed_date = None
-                if requested_after and parsed_date:
-                    if parsed_date.tzinfo is None:
-                        parsed_date = parsed_date.replace(tzinfo=timezone.utc)
-                    if parsed_date.astimezone(timezone.utc) < requested_after.astimezone(timezone.utc):
-                        last_error = "已找到历史 PIN 邮件，等待本次请求的新邮件"
-                        continue
                 text = get_email_text(message)
                 pin = extract_pin_from_text(text)
                 if pin:
-                    log(f"[IMAP] 已从邮件中提取 PIN，主题: {subject or '无主题'}，发件人: {sender or '未知'}，日期: {parsed_date or date_header or '未知'}")
+                    log(f"[IMAP] 已从新邮件中提取 PIN，UID: {message_uid.decode(errors='replace')}，主题: {subject or '无主题'}，发件人: {sender or '未知'}，日期: {parsed_date or date_header or '未知'}")
                     return pin
-                last_error = "已找到邮件但未匹配到 PIN"
+                last_error = "已找到本次请求后的邮件但未匹配到 PIN"
         except Exception as exc:
             last_error = str(exc)
         finally:
@@ -513,7 +542,7 @@ def get_pin(
     imap_username: str = None,
     imap_password: str = None,
     imap_mailbox: str = None,
-    requested_after: datetime = None,
+    after_uid: int = None,
 ) -> str:
     """统一 PIN 获取入口。"""
     if PIN_FETCHER_TYPE == 'mailparser':
@@ -528,7 +557,7 @@ def get_pin(
             imap_username=imap_username,
             imap_password=imap_password,
             imap_mailbox=imap_mailbox,
-            requested_after=requested_after,
+            after_uid=after_uid,
         )
     raise ValueError(f"不支持的 PIN 获取方式: {PIN_FETCHER_TYPE}，请设置为 'imap' 或 'mailparser'")
 
@@ -635,8 +664,21 @@ def renew(
     }
     session.post(url, headers=headers, data=data)
 
+    # 记录触发 PIN 前的最新邮件 UID，后续只接受 UID 更大的新邮件，避免依赖邮件 Date 判断。
+    last_seen_imap_uid = None
+    if PIN_FETCHER_TYPE == 'imap':
+        try:
+            last_seen_imap_uid = get_latest_imap_uid(
+                imap_host=imap_host,
+                imap_username=imap_username,
+                imap_password=imap_password,
+                imap_mailbox=imap_mailbox,
+            )
+            log(f"[IMAP] 触发 PIN 前最新邮件 UID: {last_seen_imap_uid}")
+        except Exception as exc:
+            log(f"[IMAP] 获取触发前邮件 UID 失败，将回退为最近邮件匹配: {exc}")
+
     # 弹出 'Security Check' 窗口，将自动触发 '发送 PIN'。
-    pin_requested_at = datetime.now(timezone.utc)
     session.post(
         url,
         headers=headers,
@@ -657,7 +699,7 @@ def renew(
             imap_username=imap_username,
             imap_password=imap_password,
             imap_mailbox=imap_mailbox,
-            requested_after=pin_requested_at,
+            after_uid=last_seen_imap_uid,
         )
     except Exception as exc:
         log(f"[PIN Fetcher] 获取 PIN 失败: {exc}")
