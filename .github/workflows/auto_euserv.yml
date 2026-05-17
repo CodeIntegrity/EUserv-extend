@@ -33,7 +33,6 @@ jobs:
         OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_USER_ID: ${{ secrets.TG_USER_ID }}
-        PIN_FETCHER_TYPE: ${{ vars.PIN_FETCHER_TYPE }}
         IMAP_HOST: ${{ vars.IMAP_HOST }}
         IMAP_PORT: ${{ vars.IMAP_PORT }}
         IMAP_USERNAME: ${{ secrets.IMAP_USERNAME }}
@@ -44,7 +43,6 @@ jobs:
         IMAP_PIN_MAX_RETRIES: ${{ vars.IMAP_PIN_MAX_RETRIES }}
         IMAP_PIN_RETRY_DELAY: ${{ vars.IMAP_PIN_RETRY_DELAY }}
         IMAP_LOOKBACK_LIMIT: ${{ vars.IMAP_LOOKBACK_LIMIT }}
-        MAILPARSER_DOWNLOAD_URL_ID: ${{ secrets.MAILPARSER_DOWNLOAD_URL_ID }}
         PUSH_TYPE: ${{ vars.PUSH_TYPE }}
         GOTIFY_URL: ${{ vars.GOTIFY_URL }}
         GOTIFY_TOKEN: ${{ secrets.GOTIFY_TOKEN }}

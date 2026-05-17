@@ -44,7 +44,7 @@ beautifulsoup4>=4.12.0
 **内容包括**:
 - 📖 项目简介和主要特性
 - 🚀 详细的部署步骤
-- 📋 服务配置说明 (TrueCaptcha, Mailparser, Telegram)
+- 📋 服务配置说明 (TrueCaptcha, IMAP, Telegram)
 - 🔧 本地运行指南
 - 📊 完整的工作流程图
 - 🎯 日志示例展示
@@ -141,7 +141,7 @@ EUserv-extend/
 - **HTTP**: requests
 - **HTML解析**: BeautifulSoup4
 - **调度**: GitHub Actions
-- **外部服务**: TrueCaptcha, Mailparser, Telegram
+- **外部服务**: TrueCaptcha, IMAP, Telegram
 
 ### 代码特点
 - ✅ 功能完整，可直接使用

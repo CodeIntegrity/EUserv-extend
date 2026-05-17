@@ -109,7 +109,9 @@ TRUECAPTCHA_APIKEY=your-apikey
 EUSERV_USERNAME=user@email.com
 EUSERV_PASSWORD=your-password
 OPENAI_API_KEY=sk-your-key
-MAILPARSER_DOWNLOAD_URL_ID=your-id
+IMAP_HOST=imap.example.com
+IMAP_USERNAME=mail@example.com
+IMAP_PASSWORD=your-imap-or-app-password
 ```
 
 ### 推荐配置（网络受限）
@@ -119,7 +121,9 @@ EUSERV_USERNAME=user@email.com
 EUSERV_PASSWORD=your-password
 OPENAI_API_KEY=your-key
 OPENAI_BASE_URL=https://your-endpoint.com/v1  # 关键配置
-MAILPARSER_DOWNLOAD_URL_ID=your-id
+IMAP_HOST=imap.example.com
+IMAP_USERNAME=mail@example.com
+IMAP_PASSWORD=your-imap-or-app-password
 ```
 
 ### 双保险配置（推荐）

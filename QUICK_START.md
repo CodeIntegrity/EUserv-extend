@@ -31,7 +31,9 @@ EUSERV_USERNAME          你的用户名（多个用空格分隔）
 EUSERV_PASSWORD          你的密码（多个用空格分隔）
 TRUECAPTCHA_USERID       TrueCaptcha用户ID
 TRUECAPTCHA_APIKEY       TrueCaptcha API密钥
-MAILPARSER_DOWNLOAD_URL_ID  Mailparser下载ID（多个用空格分隔）
+IMAP_HOST                IMAP服务器地址
+IMAP_USERNAME            IMAP登录用户名
+IMAP_PASSWORD            IMAP登录密码或应用专用密码
 ```
 
 **可选配置**（推荐）:
@@ -55,14 +57,12 @@ TG_USER_ID              Telegram 用户ID
 3. 充值 $1（可识别 ~3000 次）
 4. 获取 User ID 和 API Key
 
-### Mailparser（邮件解析）
+### IMAP 邮箱（PIN 码读取）
 
-1. 访问 https://mailparser.io/
-2. 注册账户
-3. 创建 Inbox
-4. 配置邮箱转发规则
-5. 设置解析规则提取 PIN
-6. 获取 Download URL ID
+1. 确认接收 EUserv 邮件的邮箱已开启 IMAP
+2. 如邮箱服务商要求，创建应用专用密码
+3. 获取 IMAP 服务器地址
+4. 配置 IMAP 用户名和密码
 
 ### Telegram Bot（可选，推荐）
 
@@ -80,8 +80,10 @@ TG_USER_ID              Telegram 用户ID
 EUSERV_USERNAME="user1@email.com user2@email.com"
 EUSERV_PASSWORD="password1 password2"
 
-# 每个账户对应一个 Mailparser ID
-MAILPARSER_DOWNLOAD_URL_ID="abc123 def456"
+# 多账户可共用一个 IMAP 邮箱，也可按账户用空格分隔
+IMAP_HOST="imap.example.com"
+IMAP_USERNAME="mail@example.com"
+IMAP_PASSWORD="your_imap_or_app_password"
 
 # TrueCaptcha 配置（所有账户共用）
 TRUECAPTCHA_USERID="your_userid"
@@ -113,8 +115,8 @@ TG_USER_ID="123456789"
 **Q: 为什么需要 TrueCaptcha？**  
 A: 用于自动识别登录验证码
 
-**Q: 为什么需要 Mailparser？**  
-A: EUserv 续期需要邮件 PIN 码验证，Mailparser 可以自动提取
+**Q: 为什么需要 IMAP 邮箱？**  
+A: EUserv 续期需要邮件 PIN 码验证，脚本会通过 IMAP 自动读取本次触发后的 PIN 邮件
 
 **Q: 可以不用 Telegram 吗？**  
 A: 可以，不配置也能正常运行，但看不到通知
@@ -135,7 +137,7 @@ A: 检查配置是否正确、服务余额是否充足、查看详细日志
 ---
 
 **⏱️ 预计部署时间**: 15-30 分钟  
-**💰 预计成本**: $1（TrueCaptcha）+ 免费（Mailparser基础版）  
+**💰 预计成本**: $1（TrueCaptcha，可选）+ 免费（IMAP 邮箱）  
 **🔄 运行频率**: 每周日 UTC 12:00
 
 祝你使用愉快！🎉

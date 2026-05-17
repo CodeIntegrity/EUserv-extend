@@ -11,7 +11,7 @@
 - ✅ **自动登录**: 自动处理 EUserv 客户面板登录
 - 🧩 **双模式验证码识别**: 支持 TrueCaptcha API 和 LLM OCR 两种验证码识别方式
 - 🔧 **灵活配置**: 支持自定义 OpenAI base_url，兼容各种 OpenAI API 服务
-- 📧 **PIN 码获取**: 默认通过 IMAP 直连邮箱获取安全 PIN 码，并保留 Mailparser 兼容模式
+- 📧 **PIN 码获取**: 通过 IMAP 直连邮箱获取安全 PIN 码
 - 🔄 **自动续期**: 自动检测并续订即将到期的服务器合约
 - 👥 **多账户支持**: 支持批量处理多个 EUserv 账户
 - 📱 **Telegram 通知**: 运行结果通过 Telegram Bot 实时推送
@@ -50,18 +50,16 @@
 | `OPENAI_API_KEY` | 条件 | OpenAI API 密钥（使用 LLM OCR 时必需） | `sk-...` |
 | `OPENAI_BASE_URL` | 否 | 自定义 OpenAI API 端点（可选） | `https://api.openai.com/v1` |
 | `OPENAI_MODEL` | 否 | OpenAI 模型名称（可选，默认 gpt-4o-mini） | `gpt-4o-mini` |
-| `PIN_FETCHER_TYPE` | 否 | PIN 获取方式：`imap` 或 `mailparser`（默认 `imap`） | `imap` |
-| `IMAP_HOST` | 条件 | IMAP 服务器地址；`imap` 模式必需，可单值共享或按账户空格分隔 | `imap.example.com` |
+| `IMAP_HOST` | 是 | IMAP 服务器地址，可单值共享或按账户空格分隔 | `imap.example.com` |
 | `IMAP_PORT` | 否 | IMAP 端口，默认 `993` | `993` |
-| `IMAP_USERNAME` | 条件 | IMAP 登录用户名；`imap` 模式必需，可单值共享或按账户空格分隔 | `mail@example.com` |
-| `IMAP_PASSWORD` | 条件 | IMAP 登录密码或应用专用密码；`imap` 模式必需，可单值共享或按账户空格分隔 | `app_password` |
+| `IMAP_USERNAME` | 是 | IMAP 登录用户名，可单值共享或按账户空格分隔 | `mail@example.com` |
+| `IMAP_PASSWORD` | 是 | IMAP 登录密码或应用专用密码，可单值共享或按账户空格分隔 | `app_password` |
 | `IMAP_MAILBOX` | 否 | 邮箱目录，默认 `INBOX`，可单值共享或按账户空格分隔 | `INBOX` |
 | `IMAP_USE_SSL` | 否 | 是否使用 SSL，默认 `true` | `true` |
 | `IMAP_SEARCH_CRITERIA` | 否 | IMAP 搜索条件，默认 `(FROM "euserv")` | `(FROM "euserv")` |
 | `IMAP_PIN_MAX_RETRIES` | 否 | IMAP 获取 PIN 最大重试次数，默认 `6` | `6` |
 | `IMAP_PIN_RETRY_DELAY` | 否 | IMAP 获取 PIN 重试间隔秒数，默认 `30` | `30` |
 | `IMAP_LOOKBACK_LIMIT` | 否 | 在搜索结果中回看最近多少封邮件，默认 `20` | `20` |
-| `MAILPARSER_DOWNLOAD_URL_ID` | 条件 | Mailparser 下载URL ID；仅 `mailparser` 模式必需，多个用空格分隔 | `id1 id2` |
 | `TG_BOT_TOKEN` | 否 | Telegram Bot Token（可选） | `123456:ABC-DEF...` |
 | `TG_USER_ID` | 否 | Telegram 用户ID（可选） | `123456789` |
 
@@ -129,33 +127,19 @@ OPENAI_BASE_URL=https://your-custom-endpoint.com/v1
 
 ## 📧 PIN 获取配置
 
-### 方式一：IMAP 直连邮箱（推荐，默认）
+### IMAP 直连邮箱
 
-脚本会在触发 EUserv 安全检查后等待 PIN 邮件送达，然后使用 Python 标准库通过 IMAP 登录邮箱，读取最近匹配的 EUserv 邮件并提取 6 位 PIN。无需 Mailparser.io，也不会新增第三方依赖。
+脚本会在触发 EUserv 安全检查后等待 PIN 邮件送达，然后使用 Python 标准库通过 IMAP 登录邮箱，读取本次触发后收到的 EUserv 邮件并提取 6 位 PIN。无需第三方邮件解析服务，也不会新增第三方依赖。
 
 1. 确认接收 EUserv 邮件的邮箱已开启 IMAP。
 2. 如果邮箱服务商要求应用专用密码，请创建应用专用密码。
 3. 在 GitHub Actions 中配置：
-   - `PIN_FETCHER_TYPE=imap`（可不设置，默认即为 `imap`）
    - `IMAP_HOST`
    - `IMAP_USERNAME`
    - `IMAP_PASSWORD`
 4. 可按需配置 `IMAP_PORT`、`IMAP_MAILBOX`、`IMAP_SEARCH_CRITERIA` 等变量。
 
 **多账户说明**: `IMAP_HOST`、`IMAP_USERNAME`、`IMAP_PASSWORD`、`IMAP_MAILBOX` 支持单值共享，也支持与 `EUSERV_USERNAME` 一样用空格分隔逐账户配置。多个 EUserv 账户共用同一个收件邮箱时只填一个 IMAP 配置即可。
-
-### 方式二：Mailparser 兼容模式
-
-如果你已经配置好 Mailparser，可继续使用兼容模式：
-
-1. 设置 `PIN_FETCHER_TYPE=mailparser`
-2. 访问 [Mailparser](https://mailparser.io/) 注册账户
-3. 创建一个新的 Inbox，将 EUserv 的邮件转发到这个 Inbox
-4. 设置解析规则，提取 PIN 码字段
-5. 获取 Download URL ID（在 Data 页面的下载链接中）
-6. 将 Download URL ID 添加到 GitHub Secrets：`MAILPARSER_DOWNLOAD_URL_ID`
-
-**注意**: Mailparser 模式下，如果你有多个 EUserv 账户，需要为每个账户提供对应的 `MAILPARSER_DOWNLOAD_URL_ID`，数量必须与账户数量一致。
 
 ### Telegram Bot 配置（可选）
 
@@ -184,7 +168,6 @@ export CAPTCHA_SOLVER_TYPE="llm"  # 可选，默认为 llm
 export OPENAI_API_KEY="sk-your-api-key"
 export OPENAI_BASE_URL="https://api.openai.com/v1"  # 可选，自定义端点
 export OPENAI_MODEL="gpt-4o-mini"  # 可选，默认为 gpt-4o-mini
-export PIN_FETCHER_TYPE="imap"  # 可选，默认为 imap
 export IMAP_HOST="imap.example.com"
 export IMAP_USERNAME="mail@example.com"
 export IMAP_PASSWORD="your_imap_or_app_password"
@@ -196,10 +179,6 @@ export TG_USER_ID="your_user_id"  # 可选
 # export CAPTCHA_SOLVER_TYPE="truecaptcha"
 # export TRUECAPTCHA_USERID="your_userid"
 # export TRUECAPTCHA_APIKEY="your_apikey"
-
-# 或使用 Mailparser 兼容模式
-# export PIN_FETCHER_TYPE="mailparser"
-# export MAILPARSER_DOWNLOAD_URL_ID="your_id"
 
 # 运行脚本
 uv run --with-requirements requirements.txt python Github_Action.py
@@ -227,7 +206,7 @@ uv run --with-requirements requirements.txt python Github_Action.py
   │   ↓
   │   等待 60 秒
   │   ↓
-  │   根据 PIN_FETCHER_TYPE 从 IMAP 或 Mailparser 获取 PIN
+  │   从 IMAP 获取 PIN
   │   ↓
   │   使用 PIN 获取 Token
   │   ↓
@@ -298,10 +277,6 @@ CHECK_CAPTCHA_SOLVER_USAGE = True  # 是否检查 TrueCaptcha API 使用次数
 
 ## ❓ 常见问题
 
-### Q: 现在还必须使用 Mailparser 吗？
-
-A: 不必须。默认 `PIN_FETCHER_TYPE=imap`，脚本会通过 IMAP 直连收件邮箱读取 EUserv PIN 邮件。Mailparser 仅作为兼容模式保留，适合已经配置好 Mailparser 的用户继续使用。
-
 ### Q: 应该选择 TrueCaptcha 还是 LLM OCR？
 
 A: **推荐使用 LLM OCR**（默认）：
@@ -332,8 +307,7 @@ A: 可以。如果不配置 `TG_BOT_TOKEN` 和 `TG_USER_ID`，脚本会跳过 Te
 
 A: 理论上没有限制，但要确保：
 - 用户名、密码数量必须一致
-- IMAP 模式下，IMAP 配置可以单值共享，也可以用空格分隔后与账户数量一致
-- Mailparser 模式下，Mailparser ID 数量必须与账户数量一致
+- IMAP 配置可以单值共享，也可以用空格分隔后与账户数量一致
 
 ### Q: 为什么续期失败？
 
@@ -342,7 +316,7 @@ A: 可能的原因：
 2. 验证码识别失败
    - LLM OCR：API Key 无效、额度不足、网络问题
    - TrueCaptcha：余额不足、网络问题
-3. IMAP 配置错误、邮箱未开启 IMAP、搜索条件不匹配，或 Mailparser 配置错误导致 PIN 码未及时获取
+3. IMAP 配置错误、邮箱未开启 IMAP、搜索条件不匹配，或 PIN 码未及时获取
 4. 网络问题
 5. 服务器当前不可续期（时间未到）
 
@@ -391,7 +365,6 @@ EUserv-extend/
 
 - 感谢 [OpenAI](https://openai.com/) 提供强大的 LLM OCR 能力
 - 感谢 [TrueCaptcha](https://apitruecaptcha.org/) 提供传统验证码识别服务
-- 感谢 [Mailparser](https://mailparser.io/) 提供兼容模式邮件解析服务
 - 感谢所有贡献者和使用者
 
 ## 🔗 相关链接
@@ -399,7 +372,6 @@ EUserv-extend/
 - [EUserv Customer Panel](https://support.euserv.com)
 - [OpenAI Platform](https://platform.openai.com/)
 - [TrueCaptcha API](https://apitruecaptcha.org/)
-- [Mailparser](https://mailparser.io/)
 - [Telegram Bot API](https://core.telegram.org/bots/api)
 - [双模式配置指南](DUAL_MODE_GUIDE.md) - 详细的验证码识别配置说明
 - [LLM OCR 迁移指南](LLM_OCR_MIGRATION.md) - 从 TrueCaptcha 迁移到 LLM OCR

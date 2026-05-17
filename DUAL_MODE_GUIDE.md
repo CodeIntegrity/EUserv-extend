@@ -129,7 +129,9 @@ EUSERV_USERNAME=user@example.com
 EUSERV_PASSWORD=your-password
 CAPTCHA_SOLVER_TYPE=llm  # 可选，默认就是 llm
 OPENAI_API_KEY=sk-your-openai-key
-MAILPARSER_DOWNLOAD_URL_ID=your-id
+IMAP_HOST=imap.example.com
+IMAP_USERNAME=mail@example.com
+IMAP_PASSWORD=your-imap-or-app-password
 TG_BOT_TOKEN=your-telegram-token  # 可选
 TG_USER_ID=your-telegram-id  # 可选
 ```
@@ -144,7 +146,9 @@ CAPTCHA_SOLVER_TYPE=llm
 OPENAI_API_KEY=your-custom-key
 OPENAI_BASE_URL=https://your-custom-endpoint.com/v1
 OPENAI_MODEL=gpt-4o-mini
-MAILPARSER_DOWNLOAD_URL_ID=your-id
+IMAP_HOST=imap.example.com
+IMAP_USERNAME=mail@example.com
+IMAP_PASSWORD=your-imap-or-app-password
 TG_BOT_TOKEN=your-telegram-token  # 可选
 TG_USER_ID=your-telegram-id  # 可选
 ```
@@ -158,7 +162,9 @@ EUSERV_PASSWORD=your-password
 CAPTCHA_SOLVER_TYPE=truecaptcha
 TRUECAPTCHA_USERID=your-userid
 TRUECAPTCHA_APIKEY=your-apikey
-MAILPARSER_DOWNLOAD_URL_ID=your-id
+IMAP_HOST=imap.example.com
+IMAP_USERNAME=mail@example.com
+IMAP_PASSWORD=your-imap-or-app-password
 TG_BOT_TOKEN=your-telegram-token  # 可选
 TG_USER_ID=your-telegram-id  # 可选
 ```
@@ -182,7 +188,9 @@ export CAPTCHA_SOLVER_TYPE="llm"  # 可选
 export OPENAI_API_KEY="sk-your-key"
 export OPENAI_BASE_URL="https://api.openai.com/v1"  # 可选
 export OPENAI_MODEL="gpt-4o-mini"  # 可选
-export MAILPARSER_DOWNLOAD_URL_ID="your_id"
+export IMAP_HOST="imap.example.com"
+export IMAP_USERNAME="mail@example.com"
+export IMAP_PASSWORD="your-imap-or-app-password"
 export TG_BOT_TOKEN="your_token"  # 可选
 export TG_USER_ID="your_user_id"  # 可选
 
@@ -199,7 +207,9 @@ export EUSERV_PASSWORD="your_password"
 export CAPTCHA_SOLVER_TYPE="truecaptcha"
 export TRUECAPTCHA_USERID="your_userid"
 export TRUECAPTCHA_APIKEY="your_apikey"
-export MAILPARSER_DOWNLOAD_URL_ID="your_id"
+export IMAP_HOST="imap.example.com"
+export IMAP_USERNAME="mail@example.com"
+export IMAP_PASSWORD="your-imap-or-app-password"
 export TG_BOT_TOKEN="your_token"  # 可选
 export TG_USER_ID="your_user_id"  # 可选
 

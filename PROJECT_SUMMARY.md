@@ -20,7 +20,7 @@
 1. **功能完整性**
    - 实现了完整的自动化续期流程
    - 集成了验证码识别（TrueCaptcha）
-   - 集成了邮件 PIN 码获取（Mailparser）
+   - 集成了邮件 PIN 码获取（IMAP）
    - 支持多账户批量处理
    - 提供 Telegram 通知功能
 
@@ -97,7 +97,7 @@ EUserv-extend/
    - `get_servers()`: 获取服务器列表
    - `renew()`: 执行续期操作
    - `check()`: 检查续期状态
-   - `get_pin_from_mailparser()`: 获取 PIN 码
+   - `get_pin_from_imap()`: 获取 PIN 码
 
 3. **辅助功能模块**
    - `log()`: 日志输出（带 emoji）
@@ -111,7 +111,7 @@ EUserv-extend/
 外部服务依赖:
 ├── EUserv API (support.euserv.com)
 ├── TrueCaptcha API (api.apitruecaptcha.org)
-├── Mailparser API (files.mailparser.io)
+├── IMAP 邮箱服务
 └── Telegram Bot API (api.telegram.org)
 
 Python 库依赖:
@@ -129,7 +129,9 @@ Python 库依赖:
 - `EUSERV_PASSWORD`: EUserv 密码
 - `TRUECAPTCHA_USERID`: TrueCaptcha 用户ID
 - `TRUECAPTCHA_APIKEY`: TrueCaptcha API密钥
-- `MAILPARSER_DOWNLOAD_URL_ID`: Mailparser 下载ID
+- `IMAP_HOST`: IMAP 服务器地址
+- `IMAP_USERNAME`: IMAP 登录用户名
+- `IMAP_PASSWORD`: IMAP 登录密码或应用专用密码
 
 **环境变量（可选）**:
 - `TG_BOT_TOKEN`: Telegram Bot Token
@@ -198,7 +200,7 @@ python Github_Action.py
 
 - **API 调用**:
   - TrueCaptcha: 每次登录 1 次（如有验证码）
-  - Mailparser: 每台服务器续期 1 次
+  - IMAP: 每台服务器续期至少 1 次邮箱读取
   - Telegram: 每次运行 1 次
 
 - **网络流量**: 极小（< 1MB/次）
@@ -229,7 +231,7 @@ python Github_Action.py
    - 建议改为 `ast.literal_eval()` 或正则匹配
 
 2. **依赖风险**
-   - 依赖第三方服务（TrueCaptcha, Mailparser）
+   - 依赖外部服务（TrueCaptcha, IMAP 邮箱）
    - 服务中断会导致脚本失败
 
 3. **账户安全**

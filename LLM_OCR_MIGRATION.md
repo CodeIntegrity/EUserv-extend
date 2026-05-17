@@ -83,7 +83,9 @@ pip install -r requirements.txt
 export OPENAI_API_KEY="your-openai-api-key"
 export EUSERV_USERNAME="your-username"
 export EUSERV_PASSWORD="your-password"
-export MAILPARSER_DOWNLOAD_URL_ID="your-mailparser-id"
+export IMAP_HOST="imap.example.com"
+export IMAP_USERNAME="mail@example.com"
+export IMAP_PASSWORD="your-imap-or-app-password"
 ```
 
 ### 3. 运行脚本

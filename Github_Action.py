@@ -16,7 +16,6 @@ import base64
 import io
 import imaplib
 import email
-from datetime import datetime, timezone
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
 import requests
@@ -44,14 +43,6 @@ if _raw_openai_base_url is not None:
 else:
     OPENAI_BASE_URL = None
 OPENAI_MODEL = os.getenv('OPENAI_MODEL') or 'gpt-4o-mini'  # 默认使用 gpt-4o-mini
-
-# PIN 获取方式配置
-# 支持: 'imap' 或 'mailparser'，默认使用 IMAP 直连邮箱
-PIN_FETCHER_TYPE = (os.getenv('PIN_FETCHER_TYPE', '').strip() or 'imap').lower()
-
-# Mailparser 配置（兼容模式）
-MAILPARSER_DOWNLOAD_URL_ID = os.getenv('MAILPARSER_DOWNLOAD_URL_ID')
-MAILPARSER_DOWNLOAD_BASE_URL = "https://files.mailparser.io/d/"
 
 def get_int_env(name: str, default: int) -> int:
     value = os.getenv(name)
@@ -96,10 +87,6 @@ LOGIN_MAX_RETRY_COUNT = 10
 
 # 接收 PIN 的等待时间，单位为秒
 WAITING_TIME_OF_PIN = 60
-
-# 从 Mailparser 获取 PIN 的重试配置，避免邮件尚未解析完成时因空列表直接崩溃
-MAILPARSER_PIN_MAX_RETRIES = 6
-MAILPARSER_PIN_RETRY_DELAY = 30
 
 # LLM OCR 配置
 OCR_MAX_RETRIES = 10  # OCR API 调用最大重试次数
@@ -366,41 +353,6 @@ def extract_pin_from_text(text: str) -> str:
             return match.group(1)
     return ""
 
-# 从 Mailparser 获取 PIN
-def get_pin_from_mailparser(url_id: str) -> str:
-    # 从 Mailparser 获取 PIN#
-    last_error = None
-    download_url = f"{MAILPARSER_DOWNLOAD_BASE_URL}{url_id}"
-
-    for attempt in range(1, MAILPARSER_PIN_MAX_RETRIES + 1):
-        try:
-            response = requests.get(download_url, timeout=30)
-            response.raise_for_status()
-            payload = response.json()
-
-            if isinstance(payload, list) and payload:
-                pin = payload[0].get("pin")
-                if pin:
-                    return str(pin).strip()
-                last_error = "Mailparser 返回了数据，但第一条记录缺少 pin 字段"
-            else:
-                last_error = f"Mailparser 暂无 PIN 数据，返回记录数: {len(payload) if isinstance(payload, list) else '非列表响应'}"
-        except Exception as exc:
-            last_error = str(exc)
-
-        if attempt < MAILPARSER_PIN_MAX_RETRIES:
-            log(
-                f"[MailParser] 第 {attempt}/{MAILPARSER_PIN_MAX_RETRIES} 次获取 PIN 失败: "
-                f"{last_error}，{MAILPARSER_PIN_RETRY_DELAY} 秒后重试"
-            )
-            time.sleep(MAILPARSER_PIN_RETRY_DELAY)
-
-    raise RuntimeError(
-        "Mailparser 未返回可用 PIN。请检查 MAILPARSER_DOWNLOAD_URL_ID 是否正确、"
-        "EUserv PIN 邮件是否已送达并被 Mailparser 规则解析，以及 Mailparser 输出字段是否命名为 pin。"
-        f"最后一次错误: {last_error}"
-    )
-
 def decode_mime_header(value: str) -> str:
     if not value:
         return ""
@@ -537,29 +489,21 @@ def get_pin_from_imap(
     )
 
 def get_pin(
-    mailparser_dl_url_id: str = None,
     imap_host: str = None,
     imap_username: str = None,
     imap_password: str = None,
     imap_mailbox: str = None,
     after_uid: int = None,
 ) -> str:
-    """统一 PIN 获取入口。"""
-    if PIN_FETCHER_TYPE == 'mailparser':
-        log("[PIN Fetcher] 使用 Mailparser 兼容模式获取 PIN")
-        if not mailparser_dl_url_id:
-            raise ValueError("mailparser 模式缺少 MAILPARSER_DOWNLOAD_URL_ID")
-        return get_pin_from_mailparser(mailparser_dl_url_id)
-    if PIN_FETCHER_TYPE == 'imap':
-        log("[PIN Fetcher] 使用 IMAP 直连邮箱获取 PIN")
-        return get_pin_from_imap(
-            imap_host=imap_host,
-            imap_username=imap_username,
-            imap_password=imap_password,
-            imap_mailbox=imap_mailbox,
-            after_uid=after_uid,
-        )
-    raise ValueError(f"不支持的 PIN 获取方式: {PIN_FETCHER_TYPE}，请设置为 'imap' 或 'mailparser'")
+    """通过 IMAP 获取 PIN。"""
+    log("[PIN Fetcher] 使用 IMAP 直连邮箱获取 PIN")
+    return get_pin_from_imap(
+        imap_host=imap_host,
+        imap_username=imap_username,
+        imap_password=imap_password,
+        imap_mailbox=imap_mailbox,
+        after_uid=after_uid,
+    )
 
 # 登录函数
 @login_retry(max_retry=LOGIN_MAX_RETRY_COUNT)
@@ -641,7 +585,6 @@ def renew(
     session: requests.session,
     password: str,
     order_id: str,
-    mailparser_dl_url_id: str = None,
     imap_host: str = None,
     imap_username: str = None,
     imap_password: str = None,
@@ -666,17 +609,16 @@ def renew(
 
     # 记录触发 PIN 前的最新邮件 UID，后续只接受 UID 更大的新邮件，避免依赖邮件 Date 判断。
     last_seen_imap_uid = None
-    if PIN_FETCHER_TYPE == 'imap':
-        try:
-            last_seen_imap_uid = get_latest_imap_uid(
-                imap_host=imap_host,
-                imap_username=imap_username,
-                imap_password=imap_password,
-                imap_mailbox=imap_mailbox,
-            )
-            log(f"[IMAP] 触发 PIN 前最新邮件 UID: {last_seen_imap_uid}")
-        except Exception as exc:
-            log(f"[IMAP] 获取触发前邮件 UID 失败，将回退为最近邮件匹配: {exc}")
+    try:
+        last_seen_imap_uid = get_latest_imap_uid(
+            imap_host=imap_host,
+            imap_username=imap_username,
+            imap_password=imap_password,
+            imap_mailbox=imap_mailbox,
+        )
+        log(f"[IMAP] 触发 PIN 前最新邮件 UID: {last_seen_imap_uid}")
+    except Exception as exc:
+        log(f"[IMAP] 获取触发前邮件 UID 失败，将回退为最近邮件匹配: {exc}")
 
     # 弹出 'Security Check' 窗口，将自动触发 '发送 PIN'。
     session.post(
@@ -690,11 +632,10 @@ def renew(
         },
     )
 
-    # 等待邮件送达或邮件解析器解析出 PIN
+    # 等待 PIN 邮件送达
     time.sleep(WAITING_TIME_OF_PIN)
     try:
         pin = get_pin(
-            mailparser_dl_url_id,
             imap_host=imap_host,
             imap_username=imap_username,
             imap_password=imap_password,
@@ -813,7 +754,6 @@ def main_handler(event, context):
         exit(1)
     user_list = USERNAME.strip().split()
     passwd_list = PASSWORD.strip().split()
-    mailparser_dl_url_id_list = []
     imap_host_list = []
     imap_username_list = []
     imap_password_list = []
@@ -821,25 +761,13 @@ def main_handler(event, context):
     if len(user_list) != len(passwd_list):
         log("[AutoEUServerless] 用户名和密码数量不匹配!")
         exit(1)
-    if PIN_FETCHER_TYPE == 'mailparser':
-        if not MAILPARSER_DOWNLOAD_URL_ID:
-            log("[AutoEUServerless] mailparser 模式需要设置 MAILPARSER_DOWNLOAD_URL_ID!")
-            exit(1)
-        mailparser_dl_url_id_list = MAILPARSER_DOWNLOAD_URL_ID.strip().split()
-        if len(mailparser_dl_url_id_list) != len(user_list):
-            log("[AutoEUServerless] mailparser_dl_url_ids 和用户名的数量不匹配!")
-            exit(1)
-    elif PIN_FETCHER_TYPE == 'imap':
-        if not IMAP_HOST or not IMAP_USERNAME or not IMAP_PASSWORD:
-            log("[AutoEUServerless] imap 模式需要设置 IMAP_HOST、IMAP_USERNAME、IMAP_PASSWORD!")
-            exit(1)
-        imap_host_list = expand_account_config(IMAP_HOST, len(user_list), 'IMAP_HOST')
-        imap_username_list = expand_account_config(IMAP_USERNAME, len(user_list), 'IMAP_USERNAME')
-        imap_password_list = expand_account_config(IMAP_PASSWORD, len(user_list), 'IMAP_PASSWORD')
-        imap_mailbox_list = expand_account_config(IMAP_MAILBOX, len(user_list), 'IMAP_MAILBOX')
-    else:
-        log(f"[AutoEUServerless] 不支持的 PIN_FETCHER_TYPE: {PIN_FETCHER_TYPE}，请设置为 imap 或 mailparser!")
+    if not IMAP_HOST or not IMAP_USERNAME or not IMAP_PASSWORD:
+        log("[AutoEUServerless] 需要设置 IMAP_HOST、IMAP_USERNAME、IMAP_PASSWORD!")
         exit(1)
+    imap_host_list = expand_account_config(IMAP_HOST, len(user_list), 'IMAP_HOST')
+    imap_username_list = expand_account_config(IMAP_USERNAME, len(user_list), 'IMAP_USERNAME')
+    imap_password_list = expand_account_config(IMAP_PASSWORD, len(user_list), 'IMAP_PASSWORD')
+    imap_mailbox_list = expand_account_config(IMAP_MAILBOX, len(user_list), 'IMAP_MAILBOX')
     for i in range(len(user_list)):
         print("*" * 30)
         log("[AutoEUServerless] 正在续费第 %d 个账号" % (i + 1))
@@ -851,17 +779,15 @@ def main_handler(event, context):
         log("[AutoEUServerless] 检测到第 {} 个账号有 {} 台 VPS，正在尝试续期".format(i + 1, len(SERVERS)))
         for k, v in SERVERS.items():
             if v:
-                mailparser_dl_url_id = mailparser_dl_url_id_list[i] if PIN_FETCHER_TYPE == 'mailparser' else None
-                imap_host = imap_host_list[i] if PIN_FETCHER_TYPE == 'imap' else None
-                imap_username = imap_username_list[i] if PIN_FETCHER_TYPE == 'imap' else None
-                imap_password = imap_password_list[i] if PIN_FETCHER_TYPE == 'imap' else None
-                imap_mailbox = imap_mailbox_list[i] if PIN_FETCHER_TYPE == 'imap' else None
+                imap_host = imap_host_list[i]
+                imap_username = imap_username_list[i]
+                imap_password = imap_password_list[i]
+                imap_mailbox = imap_mailbox_list[i]
                 if not renew(
                     sessid,
                     s,
                     passwd_list[i],
                     k,
-                    mailparser_dl_url_id,
                     imap_host=imap_host,
                     imap_username=imap_username,
                     imap_password=imap_password,

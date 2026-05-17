@@ -13,7 +13,7 @@
 - **自动登录**: 支持用户名/邮箱和密码登录 EUserv 客户面板
 - **验证码识别**: 集成 TrueCaptcha API 自动识别登录验证码
 - **合约续期**: 自动检测并续订即将到期的服务器合约
-- **PIN 码获取**: 通过 Mailparser 服务获取邮箱中的 PIN 码用于身份验证
+- **PIN 码获取**: 通过 IMAP 直连邮箱获取 PIN 码用于身份验证
 - **状态通知**: 通过 Telegram Bot 发送运行状态和结果通知
 
 ### 2. 多账户支持
@@ -44,7 +44,7 @@ EUserv-extend/
 
 ### 外部服务
 1. **TrueCaptcha API**: 验证码识别服务
-2. **Mailparser**: 邮件解析服务，用于提取 PIN 码
+2. **IMAP 邮箱**: 用于读取 EUserv PIN 码邮件
 3. **Telegram Bot API**: 消息推送服务
 
 ## ⚙️ 配置说明
@@ -55,7 +55,9 @@ EUSERV_USERNAME           # EUserv 用户名（多个账户用空格分隔）
 EUSERV_PASSWORD           # EUserv 密码（多个密码用空格分隔）
 TRUECAPTCHA_USERID        # TrueCaptcha 用户ID
 TRUECAPTCHA_APIKEY        # TrueCaptcha API密钥
-MAILPARSER_DOWNLOAD_URL_ID # Mailparser 下载URL ID（多个用空格分隔）
+IMAP_HOST                 # IMAP 服务器地址
+IMAP_USERNAME             # IMAP 登录用户名
+IMAP_PASSWORD             # IMAP 登录密码或应用专用密码
 TG_BOT_TOKEN              # Telegram Bot Token
 TG_USER_ID                # Telegram 用户ID
 ```
@@ -80,7 +82,7 @@ TG_USER_ID                # Telegram 用户ID
    - 检查每台服务器的续期状态
 3. **续期操作**: 对可续期的服务器执行续订
    - 触发安全检查，发送 PIN 码到邮箱
-   - 等待 60 秒，从 Mailparser 获取 PIN
+   - 等待 60 秒，从 IMAP 邮箱获取 PIN
    - 使用 PIN 获取 token
    - 提交续期请求
 4. **状态检查**: 验证续期是否成功
@@ -112,7 +114,7 @@ TG_USER_ID                # Telegram 用户ID
 3. **`captcha_solver()`**: 调用 TrueCaptcha API 识别验证码
 4. **`handle_captcha_solved_result()`**: 处理验证码识别结果，支持数学运算
 5. **`get_captcha_solver_usage()`**: 查询验证码服务使用情况
-6. **`get_pin_from_mailparser()`**: 从 Mailparser 获取 PIN 码
+6. **`get_pin_from_imap()`**: 从 IMAP 邮箱获取 PIN 码
 7. **`login(username, password)`**: 登录函数，支持验证码处理
 8. **`get_servers()`**: 获取账户下的服务器列表和状态
 9. **`renew()`**: 执行续期操作
